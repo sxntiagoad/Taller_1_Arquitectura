@@ -1,0 +1,108 @@
+{% extends 'Template.html' %}
+{% load static %}
+
+{% block title %}Búsqueda de Usuarios{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .user-list-item {
+        display: flex;
+        align-items: center;
+        padding: 10px;
+        transition: background-color 0.3s;
+    }
+
+    .user-list-item img {
+        width: 50px;
+        height: 50px;
+        object-fit: cover;
+        border-radius: 50%;
+        margin-right: 15px;
+    }
+
+    .user-list-item a {
+        text-decoration: none;
+        color: #000;
+        transition: color 0.3s;
+    }
+
+    .user-list-item a:hover {
+        text-decoration: underline;
+    }
+
+    /* Estilos para el modo oscuro */
+    body.dark-mode .user-list-item {
+        background-color: #2a2a2a; /* Fondo oscuro */
+        color: #ffffff; /* Texto claro */
+    }
+
+    body.dark-mode .user-list-item a {
+        color: #ffffff; /* Texto de enlace claro */
+    }
+
+    body.dark-mode .user-list-item a:hover {
+        color: #007bff; /* Color del enlace al pasar el ratón */
+    }
+
+    .search-bar {
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <!-- Barra de búsqueda -->
+    <form class="row g-2 search-bar" method="GET" action="{% url 'buscar_usuarios' %}">
+        <div class="col-md-4">
+            <input class="form-control" type="search" name="query" value="{{ request.GET.query }}" placeholder="Buscar por nombre, apellido o email..." aria-label="Search">
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" name="carrera">
+                <option value="">Todas las carreras</option>
+                {% for value, display in form.carrera.field.choices %}
+                    <option value="{{ value }}" {% if request.GET.carrera == value %}selected{% endif %}>{{ display }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" name="semestre">
+                <option value="">Todos los semestres</option>
+                {% for value, display in form.semestre.field.choices %}
+                    <option value="{{ value }}" {% if request.GET.semestre == value %}selected{% endif %}>{{ display }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-outline-primary w-100" type="submit">Buscar</button>
+        </div>
+    </form>
+
+    <!-- Resultados de la búsqueda -->
+    {% if usuarios %}
+        <h5 class="mt-4">Resultados de la búsqueda:</h5>
+        <ul class="list-group">
+            {% for usuario in usuarios %}
+                <li class="list-group-item user-list-item">
+                    <!-- Foto de perfil y enlace al perfil del usuario -->
+                    {% if usuario.foto_perfil %}
+                        <img src="{{ usuario.foto_perfil.url }}" alt="Foto de perfil">
+                    {% else %}
+                        <img src="{% static 'Default_profile.jpg' %}" alt="Foto de perfil">
+                    {% endif %}
+
+                    <!-- Redirigir a 'Cuenta' si el usuario encontrado es el usuario autenticado -->
+                    {% if user.id == usuario.id %}
+                        <a href="{% url 'Cuenta' %}">Tu Perfil ({{ usuario.nombres }} {{ usuario.apellidos }})</a>
+                    {% else %}
+                        <a href="{% url 'profile' usuario.id %}">{{ usuario.nombres }} {{ usuario.apellidos }} - {{ usuario.email_institucional }}</a>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% elif mensaje %}
+        <div class="alert alert-warning mt-4" role="alert">
+            {{ mensaje }}
+        </div>
+    {% endif %}
+{% endblock %}
+
