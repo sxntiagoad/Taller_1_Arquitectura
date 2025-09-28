@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from .models import Usuario, Amistad, Mensaje, Foro, Comentario, Etiqueta
 from django.contrib.auth import login as auth_login, authenticate, logout
 from .forms import RegistroUsuarioForm, LoginForm, EditarPerfilForm, BuscarUsuarioForm, ForoForm, ComentarioForm
@@ -115,29 +116,76 @@ def registro_usuario(request):
 
     return render(request, 'Register.html', {'form': form})
 
-def buscar_usuarios(request):
-    form = BuscarUsuarioForm(request.GET)
-    usuarios = Usuario.objects.all()
+# abstraccion de alto nivel solo depende de la interfaz
+class IUsuarioRepository(ABC):
+    @abstractmethod
+    def get_all(self):
+        pass
+    
+    @abstractmethod
+    def filter_by_query(self, queryset, query):
+        pass
+    
+    @abstractmethod
+    def filter_by_carrera(self, queryset, carrera):
+        pass
+    
+    @abstractmethod
+    def filter_by_semestre(self, queryset, semestre):
+        pass
 
-    if form.is_valid():
-        query = form.cleaned_data.get('query')
-        carrera = form.cleaned_data.get('carrera')
-        semestre = form.cleaned_data.get('semestre')
+# servicio de alto nivel solo depende de la abstraccion
+class UsuarioSearchService:
+    def __init__(self, usuario_repository: IUsuarioRepository):
+        self.usuario_repository = usuario_repository
+
+    def buscar_usuarios(self, query=None, carrera=None, semestre=None):
+        usuarios = self.usuario_repository.get_all()
 
         if query:
-            usuarios = usuarios.filter(
-                Q(nombres__icontains=query) |
-                Q(apellidos__icontains=query) |
-                Q(email_institucional__icontains=query)
-            )
-
+            usuarios = self.usuario_repository.filter_by_query(usuarios, query)
         if carrera:
-            usuarios = usuarios.filter(carrera=carrera)
-
+            usuarios = self.usuario_repository.filter_by_carrera(usuarios, carrera)
         if semestre:
-            usuarios = usuarios.filter(semestre=semestre)
+            usuarios = self.usuario_repository.filter_by_semestre(usuarios, semestre)
+        return usuarios
 
-    return render(request, 'buscar_usuarios.html', {'form': form, 'usuarios': usuarios})
+# implementacion concreta de bajo nivel que solo depende de la abstraccion
+class DjangoUsuarioRepository(IUsuarioRepository):
+    def get_all(self):
+        return Usuario.objects.all()
+    
+    def filter_by_query(self, queryset, query):
+        return queryset.filter(
+            Q(nombres__icontains=query) |
+            Q(apellidos__icontains=query) |
+            Q(email_institucional__icontains=query)
+        )
+    
+    def filter_by_carrera(self, queryset, carrera):
+        return queryset.filter(carrera=carrera)
+    
+    def filter_by_semestre(self, queryset, semestre):
+        return queryset.filter(semestre=semestre)
+
+# vista que inyecta las dependencias
+def buscar_usuarios(request):
+    form = BuscarUsuarioForm(request.GET)
+    
+    # inversion de dependencias: el modulo de alto nivel recibe la implementacion
+    usuario_repository = DjangoUsuarioRepository()  # implementacion concreta
+    search_service = UsuarioSearchService(usuario_repository)  # inyeccion
+    
+    usuarios = Usuario.objects.all()  # default
+    
+    if form.is_valid():
+        usuarios = search_service.buscar_usuarios(
+            query=form.cleaned_data.get('query'),
+            carrera=form.cleaned_data.get('carrera'),
+            semestre=form.cleaned_data.get('semestre')
+        )
+    
+    return render(request, 'buscar_usuarios.html', {'form': form, 'usuarios': usuarios}) 
 
 
 @login_required
