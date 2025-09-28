@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Q
 from django.http import JsonResponse
+from .observers import amistad_subject
 
 def logout_user(request):
     """View to log out the user."""
@@ -190,36 +191,50 @@ def buscar_usuarios(request):
 
 @login_required
 def enviar_solicitud_amistad(request, user_id):
-    if request.method == 'POST':
-        receiver = get_object_or_404(Usuario, id=user_id)
-
-        # Verifica si ya existe una amistad o solicitud
-        if not Amistad.objects.filter(
-            (Q(user1=request.user) & Q(user2=receiver)) |
-            (Q(user1=receiver) & Q(user2=request.user))
-        ).exists():
-            # Crea la solicitud de amistad en estado pendiente
-            Amistad.objects.create(user1=request.user, user2=receiver, estado='pendiente')
-
-        return redirect('profile', user_id=receiver.id)
-    return redirect('home') # Redirect if not a POST
-
-def aceptar_solicitud_amistad(request, solicitud_id):
-    solicitud = get_object_or_404(Amistad, id=solicitud_id)
-    solicitud.aceptar_solicitud()
-    return redirect('Notificaciones')
-
+    """Vista para enviar solicitud de amistad usando el patrón Observer"""
+    user_destino = get_object_or_404(Usuario, id=user_id)
+    
+    if request.user == user_destino:
+        messages.error(request, 'No puedes enviarte una solicitud de amistad a ti mismo')
+        return redirect('profile', user_id=user_id)
+    
+    try:
+        # Usar el subject para enviar la solicitud
+        amistad_subject.enviar_solicitud(request.user, user_destino)
+        messages.success(request, f'Solicitud de amistad enviada a {user_destino.nombres}')
+    except ValueError as e:
+        messages.error(request, str(e))
+    
+    return redirect('profile', user_id=user_id)
 
 @login_required
-def rechazar_solicitud_amistad(request, solicitud_id):
-    # Obtener la solicitud de amistad
+def aceptar_solicitud_amistad(request, solicitud_id):  # ✅ Cambiar de amistad_id a solicitud_id
+    """Vista para aceptar solicitud de amistad usando el patrón Observer"""
     amistad = get_object_or_404(Amistad, id=solicitud_id, user2=request.user, estado='pendiente')
-
-    # Eliminar la solicitud de amistad
-    amistad.delete()
-
-    messages.success(request, 'Solicitud de amistad rechazada. Ahora puedes enviar una nueva solicitud si lo deseas.')
+    
+    try:
+        # Usar el subject para aceptar la solicitud
+        amistad_subject.aceptar_solicitud(amistad)
+        messages.success(request, f'Solicitud de amistad de {amistad.user1.nombres} aceptada')
+    except Exception as e:
+        messages.error(request, f'Error al aceptar solicitud: {str(e)}')
+    
     return redirect('Notificaciones')
+
+@login_required
+def rechazar_solicitud_amistad(request, solicitud_id):  # ✅ Cambiar de amistad_id a solicitud_id
+    """Vista para rechazar solicitud de amistad usando el patrón Observer"""
+    amistad = get_object_or_404(Amistad, id=solicitud_id, user2=request.user, estado='pendiente')
+    
+    try:
+        # Usar el subject para rechazar la solicitud
+        amistad_subject.rechazar_solicitud(amistad)
+        messages.success(request, f'Solicitud de amistad de {amistad.user1.nombres} rechazada')
+    except Exception as e:
+        messages.error(request, f'Error al rechazar solicitud: {str(e)}')
+    
+    return redirect('Notificaciones')
+
 @login_required
 def eliminar_amistad(request, user_id):
     amigo = get_object_or_404(Usuario, id=user_id)
@@ -236,11 +251,11 @@ def eliminar_amistad(request, user_id):
 
 @login_required
 def Notificaciones(request):
-    # Get pending friendship requests for the current user
+    # Solo solicitudes de amistad pendientes
     solicitudes = Amistad.objects.filter(user2=request.user, estado='pendiente')
-
+    
     contexto = {
-        'solicitudes': solicitudes
+        'solicitudes': solicitudes,
     }
     return render(request, 'Notificaciones.html', contexto)
 @login_required

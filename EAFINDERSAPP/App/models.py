@@ -5,30 +5,12 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
+# Solo mantener el modelo Amistad original sin la lógica de negocio
 class Amistad(models.Model):
     user1 = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='amigos_user1', on_delete=models.CASCADE)
     user2 = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='amigos_user2', on_delete=models.CASCADE)
     estado = models.CharField(max_length=20, choices=[('pendiente', 'Pendiente'), ('aceptada', 'Aceptada'), ('rechazada', 'Rechazada')], default='pendiente')
     fecha_amistad = models.DateTimeField(auto_now_add=True)
-
-    def enviar_solicitud(self):
-        # Verifica que no exista una amistad o solicitud pendiente
-        if not Amistad.objects.filter(
-            Q(user1=self.user1, user2=self.user2) | Q(user1=self.user2, user2=self.user1)
-        ).exists():
-            self.save()  # Guarda la solicitud
-
-    def aceptar_solicitud(self):
-        self.estado = 'aceptada'
-        self.save()
-
-    def rechazar_solicitud(self):
-        self.estado = 'rechazada'
-        self.save()
-
-    def delete(self, *args, **kwargs):
-        # Elimina amistades relacionadas
-        super().delete(*args, **kwargs)
 
     def __str__(self):
         return f'Amistad entre {self.user1} y {self.user2} - {self.estado}'

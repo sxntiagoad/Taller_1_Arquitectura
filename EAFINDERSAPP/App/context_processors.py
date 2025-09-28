@@ -1,12 +1,14 @@
 from .models import Amistad  # Asegúrate de que la importación es correcta
 
-def notificaciones_count(request):
+def notificaciones(request):
     if request.user.is_authenticated:
-        # Obtener solicitudes de amistad pendientes para el usuario actual
-        solicitudes = Amistad.objects.filter(user2=request.user, estado='pendiente')
+        # Solo solicitudes de amistad pendientes
+        solicitudes_pendientes = Amistad.objects.filter(
+            user2=request.user,
+            estado='pendiente'
+        ).count()
+        
         return {
-            'notificaciones_count': solicitudes.count()  # Agregar el conteo al contexto
+            'solicitudes_pendientes': solicitudes_pendientes,
         }
-    return {
-        'notificaciones_count': 0  # Retornar 0 si el usuario no está autenticado
-    }
+    return {}
