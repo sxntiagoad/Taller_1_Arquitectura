@@ -4,7 +4,7 @@ from django.db import models
 from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
-
+from .manager import ForoManager
 # Solo mantener el modelo Amistad original sin la lógica de negocio
 class Amistad(models.Model):
     user1 = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='amigos_user1', on_delete=models.CASCADE)
@@ -75,17 +75,20 @@ class Etiqueta(models.Model):
 class Foro(models.Model):
     titulo = models.CharField(max_length=255)
     descripcion = models.TextField()
-    creador = models.ForeignKey(Usuario, on_delete=models.CASCADE)
+    creador = models.ForeignKey("Usuario", on_delete=models.CASCADE)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
-    foto_foro = models.ImageField(upload_to='foros_media/', blank=True, null=True)
-    likes = models.ManyToManyField(Usuario, related_name='foros_likes', blank=True)
-    etiquetas = models.ManyToManyField(Etiqueta, related_name='foros', blank=True)  # Nuevo campo de etiquetas
+    foto_foro = models.ImageField(upload_to="foros_media/", blank=True, null=True)
+    likes = models.ManyToManyField("Usuario", related_name="foros_likes", blank=True)
+    etiquetas = models.ManyToManyField("Etiqueta", related_name="foros", blank=True)
+
+    objects = ForoManager()
 
     def total_likes(self):
         return self.likes.count()
 
     def __str__(self):
         return self.titulo
+
 
 class Comentario(models.Model):
     foro = models.ForeignKey(Foro, on_delete=models.CASCADE, related_name='comentarios')

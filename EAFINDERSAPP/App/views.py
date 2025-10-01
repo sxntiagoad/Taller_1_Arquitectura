@@ -9,6 +9,9 @@ from django.contrib import messages
 from django.db.models import Q
 from django.http import JsonResponse
 from .observers import amistad_subject
+from django.views.generic import CreateView, DetailView, ListView
+from django.urls import reverse_lazy
+from django.contrib.auth.mixins import LoginRequiredMixin
 
 def logout_user(request):
     """View to log out the user."""
@@ -313,73 +316,79 @@ def lista_conversaciones(request):
     return render(request, 'lista_Chats.html', {'amigos': amigos})
 
 
-@login_required
-def crear_foro(request):
-    if request.method == 'POST':
-        form = ForoForm(request.POST, request.FILES)
-        if form.is_valid():
-            foro = form.save(commit=False)
-            form.initial['creador'] = request.user
-            form.save()
-            return redirect('lista_foros')
-    else:
-        form = ForoForm()
+class ForoCreateView(LoginRequiredMixin, CreateView):
+    model = Foro
+    form_class = ForoForm
+    template_name = "crear_foro.html"
+    success_url = reverse_lazy("lista_foros")
 
-    return render(request, 'crear_foro.html', {'form': form})
-def detalle_foro(request, foro_id):
-    foro = get_object_or_404(Foro, id=foro_id)
-    comentarios = foro.comentarios.filter(parent=None).order_by('-fecha_creacion')  # Solo comentarios principales (sin respuestas)
+    def form_valid(self, form):
+        form.instance.creador = self.request.user
+        return super().form_valid(form)
 
-    if request.method == 'POST':
-        form = ComentarioForm(request.POST, request.FILES)  # Incluye request.FILES
+
+class ForoDetailView(DetailView):
+    model = Foro
+    pk_url_kwarg = "foro_id"  # Para mantener compatibilidad con tu URL
+    template_name = "detalle_foro.html"
+    context_object_name = "foro"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        foro = self.object
+        context["comentarios"] = foro.comentarios.filter(parent=None).order_by("-fecha_creacion")
+        context["form"] = ComentarioForm()
+        return context
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        form = ComentarioForm(request.POST, request.FILES)
         if form.is_valid():
             comentario = form.save(commit=False)
-            comentario.foro = foro
+            comentario.foro = self.object
             comentario.autor = request.user
 
-            # Verifica si hay un parent_id en el POST (lo que indicaría una respuesta)
-            parent_id = request.POST.get('parent_id')
+            parent_id = request.POST.get("parent_id")
             if parent_id:
-                parent_comentario = get_object_or_404(Comentario, id=parent_id)
-                comentario.parent = parent_comentario  # Asocia la respuesta al comentario principal
+                comentario.parent = Comentario.objects.get(id=parent_id)
 
             comentario.save()
-            return redirect('detalle_foro', foro_id=foro.id)
-    else:
-        form = ComentarioForm()
+            return redirect("detalle_foro", foro_id=self.object.id)
 
-    return render(request, 'detalle_foro.html', {'foro': foro, 'comentarios': comentarios, 'form': form})
+        context = self.get_context_data(form=form)
+        return self.render_to_response(context)
 
 
-def lista_foros(request):
-    query = request.GET.get('q')  # Obtener la consulta de búsqueda
-    etiquetas_ids = request.GET.getlist('etiquetas')  # Obtener múltiples etiquetas seleccionadas
-    foros = Foro.objects.all()  # Obtener todos los foros inicialmente
+class ForoListView(ListView):
+    model = Foro
+    template_name = "lista_foros.html"
+    context_object_name = "foros"
 
-    # Filtrar foros según la consulta de búsqueda
-    if query:
-        foros = foros.filter(
-            Q(titulo__icontains=query) |
-            Q(creador__nombres__icontains=query) |
-            Q(creador__apellidos__icontains=query) |
-            Q(fecha_creacion__icontains=query)
-        )
+    def get_queryset(self):
+        qs = super().get_queryset()
+        query = self.request.GET.get("q")
+        etiquetas_ids = self.request.GET.getlist("etiquetas")
 
-    # Filtrar foros según las etiquetas seleccionadas (lógica "OR" entre etiquetas)
-    if etiquetas_ids:
-        # Crear una lista de Q() para cada etiqueta seleccionada y combinar con OR
-        etiquetas_q = Q()
-        for etiqueta_id in etiquetas_ids:
-            etiquetas_q |= Q(etiquetas__id=etiqueta_id)
-        # Filtrar los foros aplicando la condición OR sobre las etiquetas
-        foros = foros.filter(etiquetas_q).distinct()
+        if query:
+            qs = qs.filter(
+                Q(titulo__icontains=query) |
+                Q(creador__nombres__icontains=query) |
+                Q(creador__apellidos__icontains=query) |
+                Q(fecha_creacion__icontains=query)
+            )
 
-    # Obtener todas las etiquetas para el filtro
-    etiquetas = Etiqueta.objects.all()
+        if etiquetas_ids:
+            etiquetas_q = Q()
+            for etiqueta_id in etiquetas_ids:
+                etiquetas_q |= Q(etiquetas__id=etiqueta_id)
+            qs = qs.filter(etiquetas_q).distinct()
 
-    # Renderizar la plantilla con foros y etiquetas
-    return render(request, 'lista_foros.html', {'foros': foros, 'etiquetas': etiquetas})
+        return qs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["etiquetas"] = Etiqueta.objects.all()
+        return context
 
 @login_required
 def like_foro(request, foro_id):
